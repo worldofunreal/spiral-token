@@ -2,6 +2,6 @@
     "name": "Spiral",
     "symbol": "SPIRAL",
     "description": "Your token description",
-    "image": "https://yourdomain.com/path/to/logo.png",
+    "image": "https://github.com/worldofunreal/spiral-token/blob/main/spiral.png",
     "decimals": 8
 }
