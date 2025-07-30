@@ -1,0 +1,7 @@
+{
+    "name": "Spiral",
+    "symbol": "SPIRAL",
+    "description": "Your token description",
+    "image": "https://yourdomain.com/path/to/logo.png",
+    "decimals": 8
+}
