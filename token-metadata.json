@@ -1,7 +1,12 @@
 {
     "name": "Spiral",
     "symbol": "SPIRAL",
-    "description": "Your token description",
+    "description": "Spiral token",
     "image": "https://github.com/worldofunreal/spiral-token/blob/main/spiral.png",
-    "decimals": 8
-}
+    "decimals": 8,
+    "maxSupply": "1000000000",
+    "initialSupply": "1000000",
+    "contractAddress": "0xb3684bC4c3AcEDf35bC83E02A954B546103313e1",
+    "network": "sepolia",
+    "chainId": 11155111
+} 
