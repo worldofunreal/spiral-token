@@ -1,0 +1,64 @@
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Hardhat files
+cache/
+artifacts/
+typechain-types/
+coverage/
+coverage.json
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Solana/Anchor files
+solana/target/
+solana/.anchor/
+solana/.cargo/
+solana/**/*.so
+solana/**/*.dylib
+solana/**/*.dll
+solana/.test-ledger/
+solana-deployment.json
+
+# Deployment artifacts
+ethereum-deployment.json
+*-deployment.json
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build outputs
+dist/
+build/
+*.sol.js
+
+# Test files
+test-results/
+coverage/
+
+# Temporary files
+*.tmp
+*.temp
+.cache/
+
