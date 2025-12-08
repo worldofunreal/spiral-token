@@ -9,12 +9,13 @@ via_ir = false
 evm_version = "prague"
 gas_reports = ["*"]
 verbosity = 3
+remappings = [
+    "forge-std=lib/forge-std/src",
+    "@openzeppelin/=node_modules/@openzeppelin/",
+    "@layerzerolabs/=node_modules/@layerzerolabs/"
+]
+
 
 [profile.ci]
 fuzz = { runs = 256 }
 invariant = { runs = 256 }
-
-[remappings]
-forge-std = "lib/forge-std/src"
-"@openzeppelin/" = "node_modules/@openzeppelin/"
-"@layerzerolabs/" = "node_modules/@layerzerolabs/"

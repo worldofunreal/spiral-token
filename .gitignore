@@ -42,10 +42,6 @@ solana-deployment.json
 addresses.db
 addresses-*.db
 
-# Rust build artifacts (moved to ethereum-address-scanner)
-ethereum-address-scanner/vanity-rs/target/
-ethereum-address-scanner/vanity-rs/Cargo.lock
-
 # IDE and OS files
 .vscode/
 .idea/

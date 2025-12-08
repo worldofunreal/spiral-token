@@ -1,5 +1,5 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token::{self, Mint, Token, TokenAccount, Transfer};
+use anchor_spl::token::{self, Mint, Token, TokenAccount};
 
 declare_id!("SP1RAL111111111111111111111111111111111");
 
@@ -12,10 +12,14 @@ pub mod spiral_token {
         decimals: u8,
         max_supply: u64,
     ) -> Result<()> {
+        require!(decimals <= 18, ErrorCode::InvalidDecimals);
+        require!(max_supply > 0, ErrorCode::InvalidMaxSupply);
+        require!(max_supply <= 1_000_000_000_000_000_000, ErrorCode::InvalidMaxSupply); // Reasonable cap
+
         let mint = &ctx.accounts.mint;
         let token_program = &ctx.accounts.token_program;
 
-        // Initialize the mint
+        // Initialize the mint with the provided decimals
         let cpi_accounts = token::InitializeMint {
             mint: mint.to_account_info(),
             rent: ctx.accounts.rent.to_account_info(),
@@ -28,6 +32,7 @@ pub mod spiral_token {
         ctx.accounts.mint_data.max_supply = max_supply;
         ctx.accounts.mint_data.current_supply = 0;
         ctx.accounts.mint_data.authority = ctx.accounts.authority.key();
+        ctx.accounts.mint_data.decimals = decimals;
 
         Ok(())
     }
@@ -36,10 +41,19 @@ pub mod spiral_token {
         ctx: Context<MintTokens>,
         amount: u64,
     ) -> Result<()> {
+        require!(amount > 0, ErrorCode::InvalidAmount);
+        
         let mint_data = &mut ctx.accounts.mint_data;
+        
+        // Validate authority
+        require!(
+            ctx.accounts.authority.key() == mint_data.authority,
+            ErrorCode::InvalidAuthority
+        );
         
         // Check if we're exceeding max supply
         require!(
+            mint_data.current_supply.checked_add(amount).is_some() &&
             mint_data.current_supply + amount <= mint_data.max_supply,
             ErrorCode::ExceedsMaxSupply
         );
@@ -55,7 +69,8 @@ pub mod spiral_token {
         token::mint_to(cpi_ctx, amount)?;
 
         // Update supply
-        mint_data.current_supply += amount;
+        mint_data.current_supply = mint_data.current_supply.checked_add(amount)
+            .ok_or(ErrorCode::SupplyOverflow)?;
 
         emit TokensMinted {
             recipient: ctx.accounts.recipient.key(),
@@ -73,7 +88,17 @@ pub mod spiral_token {
         amount: u64,
         nonce: [u8; 32],
     ) -> Result<()> {
+        require!(amount > 0, ErrorCode::InvalidAmount);
+        require!(recipient != Pubkey::default(), ErrorCode::InvalidRecipient);
+        require!(destination_chain > 0, ErrorCode::InvalidChainId);
+        
         let mint_data = &mut ctx.accounts.mint_data;
+        
+        // Validate authority
+        require!(
+            ctx.accounts.authority.key() == mint_data.authority,
+            ErrorCode::InvalidAuthority
+        );
         
         // Burn tokens from sender
         let cpi_accounts = token::Burn {
@@ -85,8 +110,9 @@ pub mod spiral_token {
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
         token::burn(cpi_ctx, amount)?;
 
-        // Update supply
-        mint_data.current_supply -= amount;
+        // Update supply with overflow check
+        mint_data.current_supply = mint_data.current_supply.checked_sub(amount)
+            .ok_or(ErrorCode::SupplyUnderflow)?;
 
         // Store cross-chain transfer info
         let transfer_info = CrossChainTransferInfo {
@@ -113,7 +139,18 @@ pub mod spiral_token {
         amount: u64,
         nonce: [u8; 32],
     ) -> Result<()> {
+        require!(amount > 0, ErrorCode::InvalidAmount);
+        require!(recipient != Pubkey::default(), ErrorCode::InvalidRecipient);
+        require!(source_chain > 0, ErrorCode::InvalidChainId);
+        require!(sender != Pubkey::default(), ErrorCode::InvalidSender);
+        
         let mint_data = &mut ctx.accounts.mint_data;
+        
+        // CRITICAL: Validate authority - only authorized LayerZero relayer can call this
+        require!(
+            ctx.accounts.authority.key() == mint_data.authority,
+            ErrorCode::InvalidAuthority
+        );
         
         // Check if nonce has been used
         require!(
@@ -126,6 +163,7 @@ pub mod spiral_token {
 
         // Check if we're exceeding max supply
         require!(
+            mint_data.current_supply.checked_add(amount).is_some() &&
             mint_data.current_supply + amount <= mint_data.max_supply,
             ErrorCode::ExceedsMaxSupply
         );
@@ -140,8 +178,9 @@ pub mod spiral_token {
         let cpi_ctx = CpiContext::new(cpi_program, cpi_accounts);
         token::mint_to(cpi_ctx, amount)?;
 
-        // Update supply
-        mint_data.current_supply += amount;
+        // Update supply with overflow check
+        mint_data.current_supply = mint_data.current_supply.checked_add(amount)
+            .ok_or(ErrorCode::SupplyOverflow)?;
 
         emit CrossChainTransferReceived {
             source_chain,
@@ -160,7 +199,7 @@ pub struct InitializeMint<'info> {
     #[account(
         init,
         payer = authority,
-        mint::decimals = 8,
+        mint::decimals = 8, // Default, but actual decimals stored in MintData
         mint::authority = authority,
     )]
     pub mint: Account<'info, Mint>,
@@ -168,7 +207,7 @@ pub struct InitializeMint<'info> {
     #[account(
         init,
         payer = authority,
-        space = 8 + 32 + 8 + 8,
+        space = 8 + 32 + 8 + 8 + 1, // discriminator + authority + max_supply + current_supply + decimals
     )]
     pub mint_data: Account<'info, MintData>,
     
@@ -221,11 +260,16 @@ pub struct ReceiveCrossChainTransfer<'info> {
     #[account(mut)]
     pub recipient: Account<'info, TokenAccount>,
     
-    #[account(mut)]
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + 4 + (32 * 1000), // discriminator + vec length + space for 1000 nonces max
+    )]
     pub nonce_registry: Account<'info, NonceRegistry>,
     
     pub authority: Signer<'info>,
     pub token_program: Program<'info, Token>,
+    pub system_program: Program<'info, System>,
 }
 
 #[account]
@@ -233,14 +277,19 @@ pub struct MintData {
     pub max_supply: u64,
     pub current_supply: u64,
     pub authority: Pubkey,
+    pub decimals: u8,
 }
 
 #[account]
 pub struct NonceRegistry {
+    // Use a bounded Vec to prevent DoS
+    // In production, consider using a more efficient structure or limiting to recent nonces
     pub used_nonces: Vec<[u8; 32]>,
 }
 
 impl NonceRegistry {
+    pub const MAX_NONCES: usize = 1000; // Limit to prevent DoS
+    
     pub fn is_nonce_used(&self, nonce: [u8; 32]) -> bool {
         self.used_nonces.contains(&nonce)
     }
@@ -249,6 +298,13 @@ impl NonceRegistry {
         if self.is_nonce_used(nonce) {
             return Err(ErrorCode::NonceAlreadyUsed.into());
         }
+        
+        // Prevent DoS by limiting nonce storage
+        require!(
+            self.used_nonces.len() < Self::MAX_NONCES,
+            ErrorCode::NonceRegistryFull
+        );
+        
         self.used_nonces.push(nonce);
         Ok(())
     }
@@ -293,4 +349,22 @@ pub enum ErrorCode {
     NonceAlreadyUsed,
     #[msg("Invalid chain ID")]
     InvalidChainId,
+    #[msg("Invalid amount")]
+    InvalidAmount,
+    #[msg("Invalid recipient")]
+    InvalidRecipient,
+    #[msg("Invalid sender")]
+    InvalidSender,
+    #[msg("Invalid authority")]
+    InvalidAuthority,
+    #[msg("Invalid decimals")]
+    InvalidDecimals,
+    #[msg("Invalid max supply")]
+    InvalidMaxSupply,
+    #[msg("Supply overflow")]
+    SupplyOverflow,
+    #[msg("Supply underflow")]
+    SupplyUnderflow,
+    #[msg("Nonce registry full")]
+    NonceRegistryFull,
 }

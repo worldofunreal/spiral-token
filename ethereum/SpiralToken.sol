@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.30;
 
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@layerzerolabs/lz-evm-sdk-v1-0.7/contracts/interfaces/ILayerZeroEndpoint.sol";
-import "@layerzerolabs/lz-evm-sdk-v1-0.7/contracts/interfaces/ILayerZeroReceiver.sol";
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol" as OZERC20;
+import "@openzeppelin/contracts/access/Ownable.sol" as OZOwnable;
+import "@openzeppelin/contracts/utils/Pausable.sol" as OZPausable;
+import "@openzeppelin/contracts/utils/ReentrancyGuard.sol" as OZReentrancyGuard;
+import "@layerzerolabs/lz-evm-sdk-v1-0.7/contracts/interfaces/ILayerZeroEndpoint.sol" as LZEndpoint;
+import "@layerzerolabs/lz-evm-sdk-v1-0.7/contracts/interfaces/ILayerZeroReceiver.sol" as LZReceiver;
 
-contract SpiralToken is ERC20, Ownable, Pausable, ILayerZeroReceiver {
-    ILayerZeroEndpoint public immutable lzEndpoint;
+contract SpiralToken is OZERC20.ERC20, OZOwnable.Ownable, OZPausable.Pausable, OZReentrancyGuard.ReentrancyGuard, LZReceiver.ILayerZeroReceiver {
+    LZEndpoint.ILayerZeroEndpoint public immutable LZ_ENDPOINT;
     
     // Chain IDs for different networks
     uint16 public constant ETHEREUM_CHAIN_ID = 101;
@@ -45,10 +46,14 @@ contract SpiralToken is ERC20, Ownable, Pausable, ILayerZeroReceiver {
         string memory _name,
         string memory _symbol,
         uint256 _initialSupply
-    ) ERC20(_name, _symbol) Ownable(msg.sender) {
-        lzEndpoint = ILayerZeroEndpoint(_lzEndpoint);
+    ) OZERC20.ERC20(_name, _symbol) OZOwnable.Ownable(msg.sender) {
+        require(_lzEndpoint != address(0), "Invalid endpoint");
+        LZ_ENDPOINT = LZEndpoint.ILayerZeroEndpoint(_lzEndpoint);
         if (_initialSupply > 0) {
-            _mint(msg.sender, _initialSupply * (10 ** decimals()));
+            uint256 totalInitialSupply = _initialSupply * (10 ** decimals());
+            require(totalInitialSupply <= MAX_SUPPLY, "Exceeds max supply");
+            require(totalInitialSupply / (10 ** decimals()) == _initialSupply, "Supply overflow");
+            _mint(msg.sender, totalInitialSupply);
         }
     }
     
@@ -56,6 +61,7 @@ contract SpiralToken is ERC20, Ownable, Pausable, ILayerZeroReceiver {
         uint16 _remoteChainId,
         bytes calldata _remoteAddress
     ) external onlyOwner {
+        require(_remoteAddress.length > 0, "Invalid remote address");
         trustedRemoteLookup[_remoteChainId] = _remoteAddress;
     }
     
@@ -82,7 +88,7 @@ contract SpiralToken is ERC20, Ownable, Pausable, ILayerZeroReceiver {
         // Note: abi.encode(address) pads to 32 bytes, we'll extract 20 bytes on decode
         bytes memory payload = abi.encode(_to, _amount, msg.sender, nonce);
         
-        lzEndpoint.send{value: msg.value}(
+        LZ_ENDPOINT.send{value: msg.value}(
             _dstChainId,
             trustedRemoteLookup[_dstChainId],
             payload,
@@ -99,8 +105,8 @@ contract SpiralToken is ERC20, Ownable, Pausable, ILayerZeroReceiver {
         bytes calldata _srcAddress,
         uint64 /* _nonce */,
         bytes calldata _payload
-    ) external override whenNotPaused {
-        require(msg.sender == address(lzEndpoint), "Only LZ endpoint can call");
+    ) external override whenNotPaused nonReentrant {
+        require(msg.sender == address(LZ_ENDPOINT), "Only LZ endpoint can call");
         require(
             _srcAddress.length == trustedRemoteLookup[_srcChainId].length &&
             keccak256(_srcAddress) == keccak256(trustedRemoteLookup[_srcChainId]),
@@ -121,27 +127,66 @@ contract SpiralToken is ERC20, Ownable, Pausable, ILayerZeroReceiver {
         
         // Extract recipient address from bytes (take last 20 bytes for EVM compatibility)
         // This handles both 20-byte EVM addresses and 32-byte Solana addresses
+        // Note: abi.encodePacked stores bytes left-aligned in words, not right-aligned
         address recipient;
         assembly {
             // For bytes memory, the first 32 bytes contain the length
-            let dataPtr := add(to, 32) // Skip length prefix
             let dataLen := mload(to)    // Get length
             
-            // If length > 20, take the last 20 bytes; otherwise take all bytes
-            if gt(dataLen, 20) {
-                // Take last 20 bytes (for Solana 32-byte addresses)
-                dataPtr := add(dataPtr, sub(dataLen, 20))
+            // Validate bounds: length must be at least 20 and not exceed reasonable size
+            if or(lt(dataLen, 20), gt(dataLen, 64)) {
+                revert(0, 0) // Invalid length
             }
-            recipient := mload(dataPtr)
-            // Mask to 20 bytes (160 bits) - clear upper 12 bytes
-            recipient := and(recipient, 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff)
+            
+            let dataPtr := add(to, 32) // Skip length prefix to get to data
+            
+            // For 20-byte addresses: bytes are left-aligned in the first word
+            // We need to shift right by 12 bytes (96 bits) to get the address
+            if eq(dataLen, 20) {
+                let word := mload(dataPtr)
+                // Shift right by 12 bytes (96 bits) to get address in rightmost 20 bytes
+                recipient := shr(96, word)
+            }
+            
+            // For 32-byte or larger addresses: take the last 20 bytes
+            if gt(dataLen, 20) {
+                // For 32-byte addresses: the address is right-aligned in the 32-byte value
+                // So we can just load the word and mask it
+                if eq(dataLen, 32) {
+                    let word := mload(dataPtr)
+                    // Address is right-aligned (last 20 bytes)
+                    recipient := and(word, 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff)
+                }
+                // For addresses larger than 32 bytes, get the last 20 bytes
+                if gt(dataLen, 32) {
+                    let offset := sub(dataLen, 20)
+                    let wordPtr := add(dataPtr, offset)
+                    let word := mload(wordPtr)
+                    recipient := and(word, 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff)
+                }
+            }
         }
         
         require(recipient != address(0), "Cannot mint to zero address");
 
         // Generate a unique hash for this transfer to prevent replay
         // Include source chain, sender address, and nonce to ensure uniqueness
-        bytes32 transferHash = keccak256(abi.encodePacked(_srcChainId, from, senderNonce));
+        // Use inline assembly for gas optimization
+        bytes32 transferHash;
+        assembly {
+            // Pack: _srcChainId (2 bytes) + from (20 bytes) + senderNonce (32 bytes) = 54 bytes
+            // We'll use a scratch space approach
+            let ptr := mload(0x40) // Get free memory pointer
+            mstore(ptr, shl(240, _srcChainId)) // Store chainId at start (left-aligned)
+            mstore(add(ptr, 2), shl(96, from)) // Store address (left-aligned, 20 bytes)
+            mstore(add(ptr, 22), senderNonce) // Store nonce (32 bytes)
+            
+            // Hash 54 bytes: chainId (2) + address (20) + nonce (32)
+            transferHash := keccak256(ptr, 54)
+            
+            // Update free memory pointer (not strictly necessary but good practice)
+            mstore(0x40, add(ptr, 64))
+        }
         require(!usedTransferNonces[transferHash], "Transfer already processed");
         usedTransferNonces[transferHash] = true;
         
@@ -160,10 +205,14 @@ contract SpiralToken is ERC20, Ownable, Pausable, ILayerZeroReceiver {
         bool _useZro,
         bytes calldata _adapterParams
     ) external view returns (uint256 nativeFee, uint256 zroFee) {
+        require(_amount > 0, "Amount must be greater than 0");
+        require(_to.length >= 20, "Invalid recipient address length");
+        require(trustedRemoteLookup[_dstChainId].length > 0, "Destination chain not trusted");
+        
         // Use current nonce for estimation
         uint256 nonce = nextNonce[msg.sender];
         bytes memory payload = abi.encode(_to, _amount, msg.sender, nonce);
-        return lzEndpoint.estimateFees(
+        return LZ_ENDPOINT.estimateFees(
             _dstChainId,
             address(this),
             payload,

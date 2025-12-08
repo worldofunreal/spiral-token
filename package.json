@@ -5,12 +5,13 @@
   "type": "module",
   "main": "index.js",
   "scripts": {
-    "compile": "hardhat compile",
+    "build": "$HOME/.config/.foundry/versions/stable/forge build",
+    "test": "$HOME/.config/.foundry/versions/stable/forge test",
+    "test:verbose": "$HOME/.config/.foundry/versions/stable/forge test -vvv",
+    "test:gas": "$HOME/.config/.foundry/versions/stable/forge test --gas-report",
     "deploy": "hardhat run scripts/deploy-evm.js",
     "deploy:solana": "node scripts/deploy-solana.js",
-    "set-remotes": "hardhat run scripts/set-trusted-remote.js",
-    "test": "$HOME/.config/.foundry/versions/stable/forge test",
-    "test:foundry": "$HOME/.config/.foundry/versions/stable/forge test -vvv",
+    "set-remotes": "hardhat run scripts/set-trusted-remote.js"
   },
   "devDependencies": {
     "@layerzerolabs/lz-evm-sdk-v1-0.7": "^1.5.16",
