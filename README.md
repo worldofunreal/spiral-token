@@ -1,154 +1,97 @@
-# Cross-Chain Spiral Token
+# Spiral Token - Cross-Chain Token
 
-A cross-chain token implementation that exists on both Ethereum and Solana with synchronized distribution using LayerZero for cross-chain messaging.
-
-## Architecture
-
-### Ethereum (Sepolia)
-- ERC20 token with LayerZero integration
-- Cross-chain transfer capabilities
-- Total supply: 1 billion tokens
-- Initial supply: 1 million tokens
-
-### Solana (Devnet)
-- SPL token using Anchor framework
-- Cross-chain messaging integration
-- Same total supply and distribution as Ethereum
+Cross-chain ERC20/SPL token that exists on Ethereum, Solana, and other EVM chains with synchronized supply using LayerZero.
 
 ## Features
 
-- **Cross-chain transfers**: Move tokens between Ethereum and Solana
-- **Synchronized supply**: Total supply maintained across both chains
-- **Security**: Nonce-based replay attack prevention
-- **Decentralized**: No single point of failure
+- ✅ Cross-chain transfers between Ethereum, Solana, and other EVM chains
+- ✅ Synchronized total supply across all chains
+- ✅ Secure nonce-based replay attack prevention
+- ✅ Pausable functionality
+- ✅ Maximum supply cap (1 billion tokens)
+- ✅ Comprehensive test coverage (25 Foundry tests)
 
-## Setup
+## Quick Start
 
-### Prerequisites
-- Node.js 16+
-- Solana CLI
-- Anchor framework
-- Hardhat
-
-### Installation
+### Install Dependencies
 
 ```bash
-# Install dependencies
 npm install
-
-# Install Solana/Anchor dependencies
-npm install -g @solana/cli
-npm install -g @project-serum/anchor
 ```
 
-### Environment Variables
+### Build
 
-Create a `.env` file:
+```bash
+# Compile Solidity contracts
+npm run compile
+
+# Build Solana program
+cd solana && anchor build && cd ..
 ```
-PRIVATE_KEY=your_ethereum_private_key
-INFURA_API_KEY=your_infura_api_key
-ETHEREUM_RPC_URL=https://sepolia.infura.io/v3/YOUR_API_KEY
-ETHERSCAN_API_KEY=your_etherscan_api_key
+
+### Test
+
+```bash
+npm test
 ```
 
 ## Deployment
 
-### Ethereum Deployment
+See [DEPLOY.md](./DEPLOY.md) for complete deployment instructions.
+
+### Quick Deploy
+
+1. **Set up `.env` file:**
 ```bash
-npm run compile
-npm run deploy:ethereum
+PRIVATE_KEY=0xYourPrivateKey
+SOLANA_PRIVATE_KEY=YourBase58Key
 ```
 
-### Solana Deployment
+2. **Deploy to EVM chains:**
 ```bash
-cd solana
-anchor build
-npm run deploy:solana
+npx hardhat run scripts/deploy-evm.js --network mainnet
+npx hardhat run scripts/deploy-evm.js --network polygon
+# ... etc
 ```
 
-## Cross-Chain Configuration
-
-After deploying both chains, you need to configure the trusted remote addresses:
-
-### Ethereum
-```javascript
-// Set Solana as trusted remote
-await spiralToken.setTrustedRemote(
-  SOLANA_CHAIN_ID,
-  solanaProgramId
-);
-```
-
-### Solana
-```javascript
-// Set Ethereum contract as trusted remote
-await program.methods
-  .setTrustedRemote(ETHEREUM_CHAIN_ID, ethereumContractAddress)
-  .rpc();
-```
-
-## Usage
-
-### Cross-Chain Transfer (Ethereum → Solana)
-```javascript
-await spiralToken.crossChainTransfer(
-  SOLANA_CHAIN_ID,
-  solanaRecipientAddress,
-  amount,
-  zroPaymentAddress,
-  adapterParams
-);
-```
-
-### Cross-Chain Transfer (Solana → Ethereum)
-```javascript
-await program.methods
-  .crossChainTransfer(
-    ETHEREUM_CHAIN_ID,
-    ethereumRecipientAddress,
-    amount,
-    nonce
-  )
-  .accounts({
-    // Account mappings
-  })
-  .rpc();
-```
-
-## Testing
-
+3. **Deploy to Solana:**
 ```bash
-# Ethereum tests
-npm test
-
-# Solana tests
-cd solana && anchor test
+SOLANA_NETWORK=mainnet node scripts/deploy-solana.js
 ```
 
-## Security Considerations
+4. **Set trusted remotes:**
+```bash
+npx hardhat run scripts/set-trusted-remote.js --network mainnet
+```
 
-- All cross-chain transfers use unique nonces to prevent replay attacks
-- Trusted remote addresses must be configured for security
-- Total supply is enforced on both chains
-- Bridge contracts are upgradeable with proper governance
+## Project Structure
 
-## Token Details
+```
+├── ethereum/
+│   └── SpiralToken.sol          # Main ERC20 contract
+├── solana/
+│   └── programs/
+│       └── spiral-token/        # Solana program
+├── scripts/
+│   ├── deploy-evm.js            # Deploy to EVM chains
+│   ├── deploy-solana.js         # Deploy to Solana
+│   └── set-trusted-remote.js    # Configure cross-chain
+├── test/
+│   └── foundry/                 # Foundry tests
+└── DEPLOY.md                    # Deployment guide
+```
 
-- **Name**: Spiral Token
-- **Symbol**: SPIRAL
-- **Decimals**: 8
-- **Max Supply**: 1,000,000,000 tokens
-- **Initial Supply**: 1,000,000 tokens
+## Supported Chains
 
-## Networks
+- Ethereum (Mainnet, Sepolia)
+- Polygon (Mainnet, Mumbai)
+- Arbitrum (Mainnet, Sepolia)
+- BSC (Mainnet, Testnet)
+- Avalanche (Mainnet, Fuji)
+- Optimism (Mainnet, Sepolia)
+- Base (Mainnet, Sepolia)
+- Solana (Mainnet, Devnet)
 
-- **Ethereum**: Sepolia Testnet
-- **Solana**: Devnet
+## License
 
-## Future Enhancements
-
-- Mainnet deployment
-- Additional chain support (BSC, Polygon, etc.)
-- Governance mechanism
-- Liquidity pools integration
-- Staking functionality
+MIT

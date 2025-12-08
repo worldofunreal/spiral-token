@@ -1,64 +1,64 @@
 # Dependencies
 node_modules/
-package-lock.json
-yarn.lock
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnp/
+.pnp.js
 
-# Hardhat files
+# Hardhat artifacts
 cache/
 artifacts/
 typechain-types/
 coverage/
 coverage.json
+!artifacts/.gitkeep
+
+# Foundry artifacts
+out/
+lib/forge-std/
 
 # Environment variables
 .env
 .env.local
-.env.*.local
+.env.development
+.env.test
+.env.production
 
-# Solana/Anchor files
-solana/target/
-solana/.anchor/
-solana/.cargo/
-solana/**/*.so
-solana/**/*.dylib
-solana/**/*.dll
-solana/.test-ledger/
+# Solana/Anchor specific
+target/
+.anchor/
 solana-deployment.json
+Anchor.toml.bak
 
 # Deployment artifacts
-ethereum-deployment.json
+deployments.json
 *-deployment.json
+ethereum-deployment.json
+solana-deployment.json
 
-# IDE files
+# Address databases
+*.db
+addresses.db
+addresses-*.db
+
+# Rust build artifacts (moved to ethereum-address-scanner)
+ethereum-address-scanner/vanity-rs/target/
+ethereum-address-scanner/vanity-rs/Cargo.lock
+
+# IDE and OS files
 .vscode/
 .idea/
+.DS_Store
 *.swp
-*.swo
-*~
-.DS_Store
-
-# Logs
-logs/
-*.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-
-# OS files
-.DS_Store
-Thumbs.db
-
-# Build outputs
-dist/
-build/
-*.sol.js
-
-# Test files
-test-results/
-coverage/
-
-# Temporary files
+*.bak
 *.tmp
-*.temp
-.cache/
+*~
 
+# Solana keypairs (NEVER COMMIT THESE!)
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!foundry.toml
+!Anchor.toml
