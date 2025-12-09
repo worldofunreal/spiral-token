@@ -41,6 +41,11 @@ contract SpiralToken is OZERC20.ERC20, OZOwnable.Ownable, OZPausable.Pausable, O
         uint256 amount
     );
     
+    event TrustedRemoteSet(
+        uint16 indexed remoteChainId,
+        bytes remoteAddress
+    );
+    
     constructor(
         address _lzEndpoint,
         string memory _name,
@@ -63,6 +68,7 @@ contract SpiralToken is OZERC20.ERC20, OZOwnable.Ownable, OZPausable.Pausable, O
     ) external onlyOwner {
         require(_remoteAddress.length > 0, "Invalid remote address");
         trustedRemoteLookup[_remoteChainId] = _remoteAddress;
+        emit TrustedRemoteSet(_remoteChainId, _remoteAddress);
     }
     
     function crossChainTransfer(
@@ -71,7 +77,7 @@ contract SpiralToken is OZERC20.ERC20, OZOwnable.Ownable, OZPausable.Pausable, O
         uint256 _amount,
         address _zroPaymentAddress,
         bytes calldata _adapterParams
-    ) external payable whenNotPaused {
+    ) external payable whenNotPaused nonReentrant {
         require(_amount > 0, "Amount must be greater than 0");
         require(balanceOf(msg.sender) >= _amount, "Insufficient balance");
         require(trustedRemoteLookup[_dstChainId].length > 0, "Destination chain not trusted");
@@ -125,45 +131,26 @@ contract SpiralToken is OZERC20.ERC20, OZOwnable.Ownable, OZPausable.Pausable, O
         require(from != address(0), "Invalid sender address");
         require(amount > 0, "Invalid amount");
         
-        // Extract recipient address from bytes (take last 20 bytes for EVM compatibility)
-        // This handles both 20-byte EVM addresses and 32-byte Solana addresses
-        // Note: abi.encodePacked stores bytes left-aligned in words, not right-aligned
+        // Extract recipient address from bytes
+        // Only accept 20-byte (EVM) or 32-byte (Solana) addresses for security
+        require(to.length == 20 || to.length == 32, "Unsupported address length");
+        
         address recipient;
         assembly {
-            // For bytes memory, the first 32 bytes contain the length
             let dataLen := mload(to)    // Get length
-            
-            // Validate bounds: length must be at least 20 and not exceed reasonable size
-            if or(lt(dataLen, 20), gt(dataLen, 64)) {
-                revert(0, 0) // Invalid length
-            }
-            
-            let dataPtr := add(to, 32) // Skip length prefix to get to data
+            let dataPtr := add(to, 32)  // Skip length prefix to get to data
             
             // For 20-byte addresses: bytes are left-aligned in the first word
-            // We need to shift right by 12 bytes (96 bits) to get the address
+            // Shift right by 12 bytes (96 bits) to get the address
             if eq(dataLen, 20) {
                 let word := mload(dataPtr)
-                // Shift right by 12 bytes (96 bits) to get address in rightmost 20 bytes
                 recipient := shr(96, word)
             }
             
-            // For 32-byte or larger addresses: take the last 20 bytes
-            if gt(dataLen, 20) {
-                // For 32-byte addresses: the address is right-aligned in the 32-byte value
-                // So we can just load the word and mask it
-                if eq(dataLen, 32) {
-                    let word := mload(dataPtr)
-                    // Address is right-aligned (last 20 bytes)
-                    recipient := and(word, 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff)
-                }
-                // For addresses larger than 32 bytes, get the last 20 bytes
-                if gt(dataLen, 32) {
-                    let offset := sub(dataLen, 20)
-                    let wordPtr := add(dataPtr, offset)
-                    let word := mload(wordPtr)
-                    recipient := and(word, 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff)
-                }
+            // For 32-byte addresses: address is right-aligned (last 20 bytes)
+            if eq(dataLen, 32) {
+                let word := mload(dataPtr)
+                recipient := and(word, 0x000000000000000000000000ffffffffffffffffffffffffffffffffffffffff)
             }
         }
         
@@ -227,5 +214,16 @@ contract SpiralToken is OZERC20.ERC20, OZOwnable.Ownable, OZPausable.Pausable, O
 
     function unpause() external onlyOwner {
         _unpause();
+    }
+    
+    // Emergency function to withdraw any ETH that may be stuck in the contract
+    // This can happen if LayerZero endpoint refunds ETH to this contract
+    function withdrawEth(address payable _to) external onlyOwner {
+        require(_to != address(0), "Invalid recipient");
+        uint256 balance = address(this).balance;
+        if (balance > 0) {
+            (bool success, ) = _to.call{value: balance}("");
+            require(success, "ETH transfer failed");
+        }
     }
 }

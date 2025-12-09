@@ -9,9 +9,13 @@
     "test": "$HOME/.config/.foundry/versions/stable/forge test",
     "test:verbose": "$HOME/.config/.foundry/versions/stable/forge test -vvv",
     "test:gas": "$HOME/.config/.foundry/versions/stable/forge test --gas-report",
+    "test:integration": "$HOME/.config/.foundry/versions/stable/forge test --match-path 'test/integration/**/*.t.sol'",
     "deploy": "hardhat run scripts/deploy-evm.js",
     "deploy:solana": "node scripts/deploy-solana.js",
-    "set-remotes": "hardhat run scripts/set-trusted-remote.js"
+    "set-remotes": "hardhat run scripts/set-trusted-remote.js",
+    "security:slither": "bash scripts/security/slither.sh",
+    "security:mythril": "bash scripts/security/mythril.sh",
+    "security:all": "npm run security:slither && npm run security:mythril"
   },
   "devDependencies": {
     "@layerzerolabs/lz-evm-sdk-v1-0.7": "^1.5.16",

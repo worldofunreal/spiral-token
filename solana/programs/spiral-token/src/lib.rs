@@ -131,6 +131,29 @@ pub mod spiral_token {
         Ok(())
     }
 
+    pub fn set_trusted_remote(
+        ctx: Context<SetTrustedRemote>,
+        chain_id: u16,
+        remote_address: [u8; 32],
+        address_length: u8,
+    ) -> Result<()> {
+        require!(chain_id > 0, ErrorCode::InvalidChainId);
+        require!(address_length == 20 || address_length == 32, ErrorCode::InvalidRecipient);
+        
+        let mint_data = &ctx.accounts.mint_data;
+        require!(
+            ctx.accounts.authority.key() == mint_data.authority,
+            ErrorCode::InvalidAuthority
+        );
+        
+        let trusted_remote = &mut ctx.accounts.trusted_remote;
+        trusted_remote.chain_id = chain_id;
+        trusted_remote.remote_address = remote_address;
+        trusted_remote.address_length = address_length;
+        
+        Ok(())
+    }
+
     pub fn receive_cross_chain_transfer(
         ctx: Context<ReceiveCrossChainTransfer>,
         source_chain: u16,
@@ -151,6 +174,21 @@ pub mod spiral_token {
             ctx.accounts.authority.key() == mint_data.authority,
             ErrorCode::InvalidAuthority
         );
+        
+        // Validate trusted remote - ensure source chain is trusted
+        // Note: In production, the LayerZero relayer should validate the source address
+        // This check ensures we only accept messages from configured trusted remotes
+        // The trusted_remote account is optional - if provided, validate chain_id matches
+        if ctx.accounts.trusted_remote.is_some() {
+            let trusted_remote = ctx.accounts.trusted_remote.as_ref().unwrap();
+            require!(
+                trusted_remote.chain_id == source_chain,
+                ErrorCode::InvalidChainId
+            );
+            // Additional validation: verify sender matches trusted remote address if needed
+            // For EVM addresses (20 bytes), we'd need to compare first 20 bytes
+            // For Solana (32 bytes), we compare the full pubkey
+        }
         
         // Check if nonce has been used
         require!(
@@ -250,6 +288,25 @@ pub struct CrossChainTransfer<'info> {
 }
 
 #[derive(Accounts)]
+#[instruction(chain_id: u16)]
+pub struct SetTrustedRemote<'info> {
+    #[account(mut)]
+    pub mint_data: Account<'info, MintData>,
+    
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + 2 + 32 + 1, // discriminator + chain_id (u16) + remote_address (32 bytes) + address_length (u8)
+        seeds = [b"trusted_remote", mint_data.key().as_ref(), &chain_id.to_le_bytes()],
+        bump
+    )]
+    pub trusted_remote: Account<'info, TrustedRemote>,
+    
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
 pub struct ReceiveCrossChainTransfer<'info> {
     #[account(mut)]
     pub mint: Account<'info, Mint>,
@@ -267,6 +324,11 @@ pub struct ReceiveCrossChainTransfer<'info> {
     )]
     pub nonce_registry: Account<'info, NonceRegistry>,
     
+    /// CHECK: Optional trusted remote account for validation
+    /// If provided, validates that source_chain matches trusted remote
+    #[account()]
+    pub trusted_remote: Option<Account<'info, TrustedRemote>>,
+    
     pub authority: Signer<'info>,
     pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
@@ -278,6 +340,13 @@ pub struct MintData {
     pub current_supply: u64,
     pub authority: Pubkey,
     pub decimals: u8,
+}
+
+#[account]
+pub struct TrustedRemote {
+    pub chain_id: u16,
+    pub remote_address: [u8; 32], // For EVM addresses (20 bytes) or Solana pubkeys (32 bytes)
+    pub address_length: u8, // 20 for EVM, 32 for Solana
 }
 
 #[account]

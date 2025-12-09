@@ -167,6 +167,14 @@ npx hardhat run scripts/deploy-evm.js --network sepolia
 
 If you only care about building and testing, you can remove Hardhat entirely and just use Foundry.
 
+## Documentation
+
+- **[DEPLOYMENT.md](./DEPLOYMENT.md)** - Complete deployment guide for all networks
+- **[OPERATIONS.md](./OPERATIONS.md)** - Operational runbook for monitoring and maintenance
+- **[SECURITY.md](./SECURITY.md)** - Security documentation and threat model
+- **[docs/INTEGRATION.md](./docs/INTEGRATION.md)** - Integration guide for dApps
+- **[docs/SOLANA_INTEGRATION.md](./docs/SOLANA_INTEGRATION.md)** - Solana LayerZero integration details
+
 ## License
 
 MIT
